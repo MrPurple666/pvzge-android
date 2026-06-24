@@ -15,16 +15,16 @@ class MouseGameWebView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null
 ) : WebView(context, attrs) {
 
-    // #11: Removed dead code (mainHandler, isTouching)
+    // State variables (mainHandler, isTouching)
     private var isDragging = false
     private var lastScrollY = 0f
-    private var lastScrollX = 0f  // #8: horizontal scroll tracking
+    private var lastScrollX = 0f  // horizontal scroll tracking
     private var touchStartCenterX = 0f
     private var touchStartCenterY = 0f
     private var hasMovedEnough = false
     private val moveThreshold = 20f
     private var maxTouches = 0
-    private var touchStartTime = 0L  // #10: long-press detection
+    private var touchStartTime = 0L  // long-press detection
     private var touchStartX = 0f
     private var touchStartY = 0f
     private var longPressTriggered = false
@@ -43,7 +43,7 @@ class MouseGameWebView @JvmOverloads constructor(
         when (action) {
             MotionEvent.ACTION_DOWN -> {
                 if (pointerCount == 1) {
-                    touchStartTime = System.currentTimeMillis()  // #10
+                    touchStartTime = System.currentTimeMillis()  // long-press
                     touchStartX = event.x
                     touchStartY = event.y
                     longPressTriggered = false
@@ -57,13 +57,13 @@ class MouseGameWebView @JvmOverloads constructor(
                 if (pointerCount == 2) {
                     isDragging = false
                     hasMovedEnough = false
-                    longPressTriggered = true  // #10: cancel long-press on second finger
+                    longPressTriggered = true  // cancel long-press on second finger
                     val cx = (event.getX(0) + event.getX(1)) / 2
                     val cy = (event.getY(0) + event.getY(1)) / 2
                     touchStartCenterX = cx
                     touchStartCenterY = cy
                     lastScrollY = cy
-                    lastScrollX = cx  // #8
+                    lastScrollX = cx  // horizontal
                     injectMouseEventAt(cx, cy, MotionEvent.ACTION_MOVE, MotionEvent.BUTTON_PRIMARY)
                 }
             }
@@ -74,7 +74,7 @@ class MouseGameWebView @JvmOverloads constructor(
                 } else if (pointerCount == 2) {
                     val cx = (event.getX(0) + event.getX(1)) / 2
                     val cy = (event.getY(0) + event.getY(1)) / 2
-                    // #8: Track both horizontal and vertical deltas
+                    // Track both horizontal and vertical deltas
                     val dx = abs(cx - touchStartCenterX)
                     val dy = abs(cy - touchStartCenterY)
                     val totalDelta = dx + dy
@@ -98,7 +98,7 @@ class MouseGameWebView @JvmOverloads constructor(
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
                 if (action == MotionEvent.ACTION_UP) {
                     if (maxTouches == 1 && isDragging) {
-                        // #10: Long-press detection
+                        // Long-press detection
                         val elapsed = System.currentTimeMillis() - touchStartTime
                         val moved = abs(event.x - touchStartX) + abs(event.y - touchStartY)
                         if (!longPressTriggered && elapsed > longPressThreshold && moved < moveThreshold * 2) {
@@ -122,7 +122,7 @@ class MouseGameWebView @JvmOverloads constructor(
                 }
             }
 
-            // #7: ACTION_CANCEL — reset all state to prevent stuck dragging
+            // ACTION_CANCEL — reset all state to prevent stuck dragging
             MotionEvent.ACTION_CANCEL -> {
                 isDragging = false
                 maxTouches = 0
@@ -186,7 +186,7 @@ class MouseGameWebView @JvmOverloads constructor(
         ev.recycle()
     }
 
-    // #8: Horizontal scroll injection
+    // Horizontal scroll injection
     private fun injectHScrollEventAt(x: Float, y: Float, delta: Float) {
         val props = arrayOf(MotionEvent.PointerProperties().apply {
             id = 0
@@ -205,7 +205,7 @@ class MouseGameWebView @JvmOverloads constructor(
         ev.recycle()
     }
 
-    // #9: Right-click now moves cursor to tap position first
+    // Right-click now moves cursor to tap position first
     private fun injectRightClickAt(x: Float, y: Float) {
         injectMouseEventAt(x, y, MotionEvent.ACTION_MOVE, MotionEvent.BUTTON_PRIMARY)
         injectJsMouseEvent(x, y, "mousedown", 2)

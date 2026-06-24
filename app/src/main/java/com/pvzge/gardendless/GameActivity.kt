@@ -56,7 +56,7 @@ class GameActivity : AppCompatActivity() {
         setupFullScreen()
         createNotificationChannel()
 
-        // Pre-warm WebView engine during extraction (#4)
+        // Pre-warm WebView engine during extraction
         webView = MouseGameWebView(this)
 
         val sp = getSharedPreferences("app_data", MODE_PRIVATE)
@@ -75,7 +75,7 @@ class GameActivity : AppCompatActivity() {
     }
 
     private fun checkAndExtractAssets(currentVersion: Int, sp: android.content.SharedPreferences) {
-        // Get total size for progress tracking (#1)
+        // Get total size for progress tracking
         val zipPath = File(filesDir, "temp_game.zip")
         try {
             assets.open("pvzge_web.zip").use { input ->
@@ -91,7 +91,7 @@ class GameActivity : AppCompatActivity() {
         val totalSize = zipFile.entries().asSequence().map { it.size }.sum()
         zipFile.close()
 
-        // Build extraction dialog with determinate progress (#1)
+        // Build extraction dialog with determinate progress
         val progressLayout = android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.VERTICAL
             setPadding(50, 20, 50, 20)
@@ -192,7 +192,7 @@ class GameActivity : AppCompatActivity() {
     }
 
     private fun showExtractionError(currentVersion: Int, sp: android.content.SharedPreferences) {
-        // #2: Error UI with retry
+        // Error UI with retry
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.hint)
             .setMessage(R.string.extraction_error)
@@ -206,7 +206,7 @@ class GameActivity : AppCompatActivity() {
 
     /**
      * Shows a warning dialog before updating game files. Save data may become
-     * incompatible between game versions — same risk as the reference release notes.
+     * incompatible between game versions — same risk as noted in release notes.
      */
     private fun showPreUpdateWarning(currentVersion: Int, sp: android.content.SharedPreferences) {
         MaterialAlertDialogBuilder(this)
@@ -224,7 +224,7 @@ class GameActivity : AppCompatActivity() {
     }
 
     private fun setupWebview() {
-        // WebView was pre-warmed in onCreate (#4)
+        // WebView was pre-warmed in onCreate
         // Apply GPU and security settings
 
         val container = object : android.widget.FrameLayout(this) {
@@ -269,29 +269,29 @@ class GameActivity : AppCompatActivity() {
             allowFileAccess = false
             allowContentAccess = false
             mediaPlaybackRequiresUserGesture = false
-            // GPU improvements (#20, #22)
+            // GPU performance settings
             @Suppress("DEPRECATION")
             setAlgorithmicDarkeningAllowed(false)
             safeBrowsingEnabled = false
         }
 
-        // #13: Remote debugging in debug builds
+        // Remote debugging in debug builds
         if (BuildConfig.DEBUG) {
             WebView.setWebContentsDebuggingEnabled(true)
         }
 
-        // #19: GPU process priority — requires androidx.webkit 1.16+
+        // GPU process priority — requires androidx.webkit 1.16+
         // TODO: Enable when webkit dependency is updated
         // if (Build.VERSION.SDK_INT >= 34) {
         //     webView.setRenderProcessPriority(WebView.RENDERER_PRIORITY_IMPORTANT)
         // }
 
-        // Save file export (#15: timestamped filename)
+        // Save file export (timestamped filename)
         webView.setDownloadListener { url, _, _, mimeType, _ ->
             if (url.startsWith("data:")) {
                 try {
                     val data: String
-                    // #14: Proper base64 decoding
+                    // Proper base64 decoding
                     if (url.contains(";base64,")) {
                         val base64Part = url.substringAfter(";base64,").split(",").firstOrNull() ?: return@setDownloadListener
                         data = String(Base64.decode(base64Part, Base64.DEFAULT))
@@ -421,7 +421,7 @@ o.observe(document.body||document.documentElement,{childList:true,subtree:true})
             modified.byteInputStream()
         )
     }
-    // #16: Gesture hint overlay for first-time users
+    // Gesture hint overlay for first-time users
     private fun showGestureHints() {
         val js = """
 (function() {
@@ -486,7 +486,7 @@ o.observe(document.body||document.documentElement,{childList:true,subtree:true})
             )
         }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        // #18: FLAG_SECURE disabled by default, configurable via SharedPreferences
+        // FLAG_SECURE disabled by default, configurable via SharedPreferences
         if (getSharedPreferences("app_data", MODE_PRIVATE).getBoolean("flag_secure", false)) {
             window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         }
@@ -513,7 +513,7 @@ o.observe(document.body||document.documentElement,{childList:true,subtree:true})
             .show()
     }
 
-    // #17: Local notification when extraction completes
+    // Local notification when extraction completes
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
