@@ -5,14 +5,18 @@ plugins {
 
 android {
     namespace = "com.pvzge.gardendless"
-    compileSdk = 36
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.pvzge.gardendless"
         minSdk = 27
-        targetSdk = 36
+        targetSdk = 35
         versionCode = 1
         versionName = "0.10.0"
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     buildTypes {
@@ -40,6 +44,7 @@ val zipGameAssets by tasks.registering(Zip::class) {
     archiveFileName.set("pvzge_web.zip")
     destinationDirectory.set(file("src/main/assets"))
     exclude(".nojekyll", "CNAME")
+    exclude("assets/resources/**")  // 1.2 GB — downloaded on first launch
 }
 
 tasks.named("preBuild") {

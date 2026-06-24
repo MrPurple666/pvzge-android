@@ -244,8 +244,11 @@ class GameActivity : AppCompatActivity() {
             WebView.setWebContentsDebuggingEnabled(true)
         }
 
-        // #19: Keep GPU render process prioritized
-        webView.setRenderProcessPriority(WebView.RENDERER_PRIORITY_IMPORTANT)
+        // #19: GPU process priority — requires androidx.webkit 1.16+
+        // TODO: Enable when webkit dependency is updated
+        // if (Build.VERSION.SDK_INT >= 34) {
+        //     webView.setRenderProcessPriority(WebView.RENDERER_PRIORITY_IMPORTANT)
+        // }
 
         // Save file export (#15: timestamped filename)
         webView.setDownloadListener { url, _, _, mimeType, _ ->
