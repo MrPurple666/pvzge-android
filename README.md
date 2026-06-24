@@ -12,7 +12,7 @@ A native Android wrapper for the [PvZ2 Gardendless](https://github.com/Gzh0821/p
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="License"></a>
 </p>
 
-> **Disclaimer:** This is an unofficial fan port. It is not affiliated with, endorsed by, or connected to PopCap Games, Electronic Arts, or the original Plants vs Zombies development team. All game assets and trademarks belong to their respective owners. This project exists for preservation and educational purposes.
+> **Disclaimer:** This is an unofficial fan port of [PvZ2 Gardendless](https://github.com/Gzh0821/pvzge_web), which is itself an unofficial fan project. Neither project is affiliated with, endorsed by, or connected to PopCap Games, Electronic Arts, or the original Plants vs Zombies development team. All game assets, characters, and trademarks belong to their respective owners. These projects exist for preservation and educational purposes.
 
 ---
 
