@@ -109,6 +109,7 @@ class GameActivity : AppCompatActivity() {
 
         extractionDialog = MaterialAlertDialogBuilder(this)
             .setTitle(R.string.unzipping)
+            .setMessage(getString(R.string.description) + "\nv" + packageManager.getPackageInfo(packageName, 0).versionName)
             .setView(progressLayout)
             .setCancelable(false)
             .create()
@@ -323,6 +324,20 @@ class GameActivity : AppCompatActivity() {
                     startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
                     return true
                 } catch (e: Exception) { return false }
+            }
+
+            override fun onReceivedError(
+                view: WebView?, request: WebResourceRequest?, error: WebResourceError?
+            ) {
+                error?.let {
+                    android.util.Log.e("Gardendless", "WebView error: ${it.errorCode} ${it.description} for ${request?.url}")
+                }
+            }
+
+            override fun onReceivedHttpError(
+                view: WebView?, request: WebResourceRequest?, errorResponse: WebResourceResponse?
+            ) {
+                android.util.Log.e("Gardendless", "HTTP ${errorResponse?.statusCode} for ${request?.url}")
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
