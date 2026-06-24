@@ -209,6 +209,18 @@ class GameActivity : AppCompatActivity() {
             remoteBundles.put("resources")
             assets.put("remoteBundles", remoteBundles)
 
+            // Remove resources from preloadBundles to avoid downloading 1.2 GB
+            // before showing anything. Resources load on demand from CDN instead.
+            val preloadBundles = assets.getJSONArray("preloadBundles")
+            val newPreload = JSONArray()
+            for (i in 0 until preloadBundles.length()) {
+                val bundle = preloadBundles.getJSONObject(i)
+                if (bundle.getString("bundle") != "resources") {
+                    newPreload.put(bundle)
+                }
+            }
+            assets.put("preloadBundles", newPreload)
+
             settingsFile.writeText(json.toString())
         } catch (e: Exception) {
             e.printStackTrace()
@@ -320,6 +332,7 @@ class GameActivity : AppCompatActivity() {
             // #12: onPageFinished with polling instead of fixed 8s delay
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
+                showLoadingIndicator()
                 injectTouchBlocker(0)
             }
 
@@ -329,6 +342,11 @@ class GameActivity : AppCompatActivity() {
         }
 
         webView.webChromeClient = object : WebChromeClient() {
+            override fun onConsoleMessage(msg: ConsoleMessage?): Boolean {
+                msg?.let { android.util.Log.d("Gardendless", "[${it.messageLevel()}] ${it.message()}") }
+                return true
+            }
+
             override fun onShowFileChooser(
                 webView: WebView?,
                 callback: ValueCallback<Array<Uri>>?,
@@ -356,7 +374,7 @@ class GameActivity : AppCompatActivity() {
 
     // #12: Poll for GameCanvas existence instead of fixed delay
     private fun injectTouchBlocker(attempt: Int) {
-        if (attempt >= 10) return  // max 10 retries (~5 seconds)
+        if (attempt >= 10) return
         webView.evaluateJavascript(
             "(function(){ return document.getElementById('GameCanvas') !== null ? 'true' : 'false'; })()"
         ) { result ->
@@ -380,17 +398,51 @@ class GameActivity : AppCompatActivity() {
 })();
                 """.trimIndent()
                 webView.evaluateJavascript(js, null)
-
-                // #16: Show gesture hint overlay on first launch
                 val sp = getSharedPreferences("app_data", MODE_PRIVATE)
                 if (sp.getInt("extracted_version", 0) == 1) {
                     showGestureHints()
                 }
             } else {
-                // Canvas not ready yet — retry in 500ms
                 webView.postDelayed({ injectTouchBlocker(attempt + 1) }, 500)
             }
         }
+    }
+
+    private fun showLoadingIndicator() {
+        val js = """
+(function() {
+    if (document.getElementById('gardendless-loading')) return;
+    var div = document.createElement('div');
+    div.id = 'gardendless-loading';
+    div.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;' +
+        'background:#040909;z-index:99998;display:flex;flex-direction:column;' +
+        'align-items:center;justify-content:center;color:#aaa;font-family:sans-serif;' +
+        'font-size:18px;pointer-events:none;transition:opacity 0.5s;';
+    div.innerHTML = '<div style="font-size:48px;margin-bottom:20px;">&#127793;</div>' +
+        '<div>Loading game\u2026</div>';
+    document.body.appendChild(div);
+    var checks = 0;
+    var interval = setInterval(function() {
+        checks++;
+        var canvas = document.getElementById('GameCanvas');
+        if (canvas && canvas.width > 0 && canvas.height > 0) {
+            var ctx = canvas.getContext('2d', { willReadFrequently: false });
+            if (ctx) {
+                try {
+                    var pixel = ctx.getImageData(canvas.width/2, canvas.height/2, 1, 1).data;
+                    if (pixel[0] !== 4 || pixel[1] !== 9 || pixel[2] !== 10) {
+                        div.style.opacity = '0';
+                        setTimeout(function() { div.remove(); }, 500);
+                        clearInterval(interval);
+                    }
+                } catch(e) {}
+            }
+        }
+        if (checks > 120) { clearInterval(interval); div.remove(); }
+    }, 500);
+})();
+        """.trimIndent()
+        webView.evaluateJavascript(js, null)
     }
 
     // #16: Gesture hint overlay for first-time users
