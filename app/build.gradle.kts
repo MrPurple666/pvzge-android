@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -6,6 +8,25 @@ plugins {
 android {
     namespace = "com.pvzge.gardendless"
     compileSdk = 35
+
+    signingConfigs {
+        create("release") {
+            val propsFile = rootProject.file("keystore.properties")
+            if (propsFile.exists()) {
+                val props = Properties()
+                props.load(propsFile.inputStream())
+                storeFile = file(props.getProperty("storeFile"))
+                storePassword = props.getProperty("storePassword")
+                keyAlias = props.getProperty("keyAlias")
+                keyPassword = props.getProperty("keyPassword")
+            } else {
+                storeFile = rootProject.file("keystore.jks")
+                storePassword = System.getenv("KEYSTORE_PASSWORD") ?: "pvzge123"
+                keyAlias = System.getenv("KEY_ALIAS") ?: "pvzge"
+                keyPassword = System.getenv("KEY_PASSWORD") ?: "pvzge123"
+            }
+        }
+    }
 
     defaultConfig {
         applicationId = "com.pvzge.gardendless"
@@ -30,6 +51,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
@@ -42,8 +64,6 @@ android {
         jvmTarget = "11"
     }
 }
-
-val gameZipFile = file("src/main/assets/pvzge_web.zip")
 
 val createGameZip by tasks.registering(Zip::class) {
     group = "game"

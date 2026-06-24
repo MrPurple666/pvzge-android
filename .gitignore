@@ -9,3 +9,5 @@ build/
 *.iml
 app/build/
 app/src/main/assets/pvzge_web.zip
+!keystore.jks
+.kotlin/

@@ -2,8 +2,8 @@ name: Build and Release
 
 on:
   schedule:
-    - cron: '0 6 * * *'   # daily at 06:00 UTC
-  workflow_dispatch:        # manual trigger from Actions tab
+    - cron: '0 6 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -11,9 +11,6 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.VERSION }}
-      build: ${{ steps.version.outputs.BUILD }}
 
     steps:
       - uses: actions/checkout@v4
@@ -62,15 +59,13 @@ jobs:
           V="${{ steps.version.outputs.VERSION }}"
           CURRENT_CODE=$(grep -oP 'versionCode\s*=\s*\K\d+' app/build.gradle.kts)
           NEW_CODE=$((CURRENT_CODE + 1))
-
           sed -i "s/versionCode = $CURRENT_CODE/versionCode = $NEW_CODE/" app/build.gradle.kts
           sed -i "s/versionName = \".*\"/versionName = \"$V\"/" app/build.gradle.kts
-
           echo "Updated: versionCode $CURRENT_CODE → $NEW_CODE, versionName → $V"
 
       - name: Build APK
         if: steps.version.outputs.BUILD == 'true'
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleRelease --no-daemon
 
       - name: Create tag and release
         if: steps.version.outputs.BUILD == 'true'
@@ -82,5 +77,5 @@ jobs:
             Auto-built from upstream [PvZ2 Gardendless Online ${{ steps.version.outputs.VERSION }}](https://github.com/Gzh0821/pvzge_web).
 
             **APK includes all game assets — no network required after install.**
-          files: app/build/outputs/apk/debug/app-debug.apk
+          files: app/build/outputs/apk/release/app-release.apk
           generate_release_notes: false
