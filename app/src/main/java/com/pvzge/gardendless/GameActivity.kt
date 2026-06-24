@@ -392,6 +392,8 @@ class GameActivity : AppCompatActivity() {
 
         webView.loadUrl("https://appassets.androidplatform.net/index.html")
         setupBackNavigation()
+        // Check for app updates in background (doesn't block game)
+        checkForAppUpdate()
     }
 
     /**
@@ -544,5 +546,148 @@ o.observe(document.body||document.documentElement,{childList:true,subtree:true})
             .build()
         val nm = getSystemService(NotificationManager::class.java)
         nm.notify(NOTIFICATION_ID, notification)
+    }
+
+    // --- In-app updater ---
+
+    private var updateCheckInProgress = false
+
+    private fun checkForAppUpdate() {
+        if (updateCheckInProgress) return
+        val sp = getSharedPreferences("app_data", MODE_PRIVATE)
+        val lastCheck = sp.getLong("last_update_check", 0)
+        if (System.currentTimeMillis() - lastCheck < 24 * 60 * 60 * 1000) return // once per day
+
+        updateCheckInProgress = true
+        sp.edit().putLong("last_update_check", System.currentTimeMillis()).apply()
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val url = java.net.URL("https://api.github.com/repos/MrPurple666/pvzge-android/releases/latest")
+                val conn = url.openConnection() as java.net.HttpURLConnection
+                conn.setRequestProperty("Accept", "application/vnd.github.v3+json")
+                conn.connectTimeout = 10000
+                conn.readTimeout = 10000
+
+                if (conn.responseCode != 200) { conn.disconnect(); return@launch }
+                val json = org.json.JSONObject(conn.inputStream.bufferedReader().readText())
+                conn.disconnect()
+
+                val tagName = json.optString("tag_name", "").removePrefix("v")
+                val currentVersion = packageManager.getPackageInfo(packageName, 0).versionName ?: return@launch
+                if (tagName == currentVersion) return@launch
+
+                val remote = tagName.split(".").map { it.toIntOrNull() ?: 0 }
+                val local = currentVersion.split(".").map { it.toIntOrNull() ?: 0 }
+                val isNewer = (0 until maxOf(remote.size, local.size)).any { i ->
+                    (remote.getOrElse(i) { 0 }) > (local.getOrElse(i) { 0 })
+                }
+                if (!isNewer) return@launch
+
+                val assets = json.getJSONArray("assets")
+                var apkUrl: String? = null
+                var apkSize = 0L
+                for (i in 0 until assets.length()) {
+                    val asset = assets.getJSONObject(i)
+                    if (asset.getString("name").endsWith(".apk")) {
+                        apkUrl = asset.getString("browser_download_url")
+                        apkSize = asset.getLong("size")
+                        break
+                    }
+                }
+                if (apkUrl == null) return@launch
+
+                val body = json.optString("body", "").take(300)
+                withContext(Dispatchers.Main) {
+                    showUpdateDialog(tagName, body, apkUrl, apkSize)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                updateCheckInProgress = false
+            }
+        }
+    }
+
+    private fun showUpdateDialog(version: String, changelog: String, apkUrl: String, apkSize: Long) {
+        val sizeStr = when {
+            apkSize > 1_000_000_000 -> "${"%.1f".format(apkSize / 1_000_000_000.0)} GB"
+            apkSize > 1_000_000 -> "${"%.1f".format(apkSize / 1_000_000.0)} MB"
+            else -> "${apkSize / 1024} KB"
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle("v$version available ($sizeStr)")
+            .setMessage(changelog.ifEmpty { "New version available." })
+            .setPositiveButton("Download") { _, _ -> downloadAndInstallApk(apkUrl) }
+            .setNegativeButton("Later", null)
+            .show()
+    }
+
+    private fun downloadAndInstallApk(url: String) {
+        val nm = getSystemService(NotificationManager::class.java)
+        val notif = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setContentTitle("Downloading update…")
+            .setProgress(100, 0, true)
+            .setOngoing(true)
+            .build()
+        nm.notify(NOTIFICATION_ID + 1, notif)
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                conn.connectTimeout = 30000
+                conn.readTimeout = 60000
+                val total = conn.contentLength.toLong()
+                val apkFile = File(cacheDir, "update.apk")
+
+                var downloaded = 0L
+                conn.inputStream.use { input ->
+                    apkFile.outputStream().use { output ->
+                        val buffer = ByteArray(8192)
+                        var bytes: Int
+                        while (input.read(buffer).also { bytes = it } != -1) {
+                            output.write(buffer, 0, bytes)
+                            downloaded += bytes
+                            if (total > 0) {
+                                val pct = ((downloaded * 100) / total).toInt()
+                                withContext(Dispatchers.Main) {
+                                    val progress = NotificationCompat.Builder(this@GameActivity, NOTIFICATION_CHANNEL_ID)
+                                        .setSmallIcon(android.R.drawable.stat_sys_download)
+                                        .setContentTitle("Downloading update…")
+                                        .setProgress(100, pct, false)
+                                        .setOngoing(true)
+                                        .build()
+                                    nm.notify(NOTIFICATION_ID + 1, progress)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                nm.cancel(NOTIFICATION_ID + 1)
+
+                withContext(Dispatchers.Main) {
+                    val apkUri = FileProvider.getUriForFile(
+                        this@GameActivity, "${packageName}.fileprovider", apkFile
+                    )
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(apkUri, "application/vnd.android.package-archive")
+                        flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    startActivity(intent)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                nm.cancel(NOTIFICATION_ID + 1)
+                withContext(Dispatchers.Main) {
+                    MaterialAlertDialogBuilder(this@GameActivity)
+                        .setTitle("Download failed")
+                        .setMessage(e.message ?: "Unknown error")
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
+            }
+        }
     }
 }
