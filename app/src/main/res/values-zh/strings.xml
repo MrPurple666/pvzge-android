@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="update_title">发现新版本</string>
+    <string name="update_warning">游戏有新版本可用。更新后存档可能不兼容，请在继续前导出存档备份！</string>
+    <string name="update_continue">更新</string>
+    <string name="update_later">稍后</string>
     <string name="app_name">Gardendless</string>
     <string name="unzipping">正在解压文件…</string>
     <string name="extraction_progress">解压中… %1$d%%</string>

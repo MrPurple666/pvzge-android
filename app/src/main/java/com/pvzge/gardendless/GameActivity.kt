@@ -64,7 +64,11 @@ class GameActivity : AppCompatActivity() {
         val currentVersion = packageManager.getPackageInfo(packageName, 0).versionCode
 
         if (savedVersion != currentVersion) {
-            checkAndExtractAssets(currentVersion, sp)
+            if (savedVersion > 0) {
+                showPreUpdateWarning(currentVersion, sp)
+            } else {
+                checkAndExtractAssets(currentVersion, sp)
+            }
         } else {
             setupWebview()
         }
@@ -110,21 +114,23 @@ class GameActivity : AppCompatActivity() {
             .create()
         extractionDialog?.show()
 
-        // Delete old extraction first (#3)
-        lifecycleScope.launch(Dispatchers.IO) {  // #5: lifecycleScope not GlobalScope
+        // Atomic extraction: extract to temp dir, swap on success, rollback on failure
+        lifecycleScope.launch(Dispatchers.IO) {
+            val destNew = File(filesDir, "pvzge_web_new")
+            val destCurrent = File(filesDir, "pvzge_web")
+            val destBackup = File(filesDir, "pvzge_web_backup")
+
             try {
-                val oldExtraction = File(filesDir, "pvzge_web")
-                if (oldExtraction.exists()) {
-                    oldExtraction.deleteRecursively()
-                }
+                // Clean up stale temp dirs from previous failed attempts
+                destNew.deleteRecursively()
+                destBackup.deleteRecursively()
 
-                val destRoot = File(filesDir, "pvzge_web")
+                // Extract to temp directory first
                 var bytesExtracted = 0L
-
                 ZipInputStream(zipPath.inputStream()).use { zis ->
                     var entry: ZipEntry? = zis.nextEntry
                     while (entry != null) {
-                        val file = File(destRoot, entry.name)
+                        val file = File(destNew, entry.name)
                         if (entry.isDirectory) {
                             file.mkdirs()
                         } else {
@@ -132,11 +138,10 @@ class GameActivity : AppCompatActivity() {
                             file.outputStream().use { zis.copyTo(it) }
                             bytesExtracted += entry.size
                         }
-
-                        // Update progress (#1)
+                        // Update progress
                         if (totalSize > 0) {
                             val pct = ((bytesExtracted * 100) / totalSize).toInt()
-                            if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {  // #6: destroy guard
+                            if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
                                 withContext(Dispatchers.Main) {
                                     progressBar.progress = pct
                                     progressText.text = getString(R.string.extraction_progress, pct)
@@ -147,28 +152,38 @@ class GameActivity : AppCompatActivity() {
                     }
                 }
 
+                // Atomic swap: backup old → move new into place → delete backup
+                if (destCurrent.exists()) {
+                    destCurrent.renameTo(destBackup)
+                }
+                val success = destNew.renameTo(destCurrent)
+                if (!success) throw IllegalStateException("Failed to rename extraction directory")
+                destBackup.deleteRecursively()
+
                 sp.edit().putInt("extracted_version", currentVersion).apply()
-
-                // Clean up temp zip
                 zipPath.delete()
-
 
                 if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
                     withContext(Dispatchers.Main) {
                         extractionDialog?.dismiss()
                         extractionDialog = null
                         setupWebview()
-                        showExtractionNotification() // #17
+                        showExtractionNotification()
                     }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+                // Rollback: restore backup if it exists
+                destNew.deleteRecursively()
+                if (destBackup.exists() && !destCurrent.exists()) {
+                    destBackup.renameTo(destCurrent)
+                }
                 zipPath.delete()
                 if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
                     withContext(Dispatchers.Main) {
                         extractionDialog?.dismiss()
                         extractionDialog = null
-                        showExtractionError(currentVersion, sp)  // #2: retry UI
+                        showExtractionError(currentVersion, sp)
                     }
                 }
             }
@@ -184,6 +199,25 @@ class GameActivity : AppCompatActivity() {
                 checkAndExtractAssets(currentVersion, sp)
             }
             .setNegativeButton(R.string.close_app) { _, _ -> finish() }
+            .setCancelable(false)
+            .show()
+    }
+
+    /**
+     * Shows a warning dialog before updating game files. Save data may become
+     * incompatible between game versions — same risk as the reference release notes.
+     */
+    private fun showPreUpdateWarning(currentVersion: Int, sp: android.content.SharedPreferences) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.update_title)
+            .setMessage(R.string.update_warning)
+            .setPositiveButton(R.string.update_continue) { _, _ ->
+                checkAndExtractAssets(currentVersion, sp)
+            }
+            .setNegativeButton(R.string.update_later) { _, _ ->
+                // Keep using the old version this session
+                setupWebview()
+            }
             .setCancelable(false)
             .show()
     }
