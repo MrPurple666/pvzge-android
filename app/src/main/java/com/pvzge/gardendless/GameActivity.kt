@@ -383,25 +383,12 @@ class GameActivity : AppCompatActivity() {
     div.innerHTML = '<div style="font-size:48px;margin-bottom:20px;">&#127793;</div>' +
         '<div>Loading game\u2026</div>';
     document.body.appendChild(div);
-    var checks = 0;
-    var interval = setInterval(function() {
-        checks++;
-        var canvas = document.getElementById('GameCanvas');
-        if (canvas && canvas.width > 0 && canvas.height > 0) {
-            var ctx = canvas.getContext('2d', { willReadFrequently: false });
-            if (ctx) {
-                try {
-                    var pixel = ctx.getImageData(canvas.width/2, canvas.height/2, 1, 1).data;
-                    if (pixel[0] !== 4 || pixel[1] !== 9 || pixel[2] !== 10) {
-                        div.style.opacity = '0';
-                        setTimeout(function() { div.remove(); }, 500);
-                        clearInterval(interval);
-                    }
-                } catch(e) {}
-            }
-        }
-        if (checks > 120) { clearInterval(interval); div.remove(); }
-    }, 500);
+    // Cocos uses WebGL — can't read pixels from a 2D context.
+    // Fade after 4 seconds (Cocos splash is 2s + 2s margin).
+    setTimeout(function() {
+        div.style.opacity = '0';
+        setTimeout(function() { if (div.parentNode) div.remove(); }, 500);
+    }, 4000);
 })();
         """.trimIndent()
         webView.evaluateJavascript(js, null)
