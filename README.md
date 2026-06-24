@@ -1,82 +1,112 @@
-# PvZ2 Gardendless — Android Port
+# PvZ2 Gardendless — Android
 
-**Plants vs Zombies 2 reimagined as an endless garden.** Native Android wrapper for the [PvZ2 Gardendless](https://github.com/Gzh0821/pvzge_web) web game.
+**Plants vs Zombies 2, reimagined as an endless garden — now on Android.**
 
-[![Build and Release](https://github.com/MrPurple666/pvzge-android/actions/workflows/release.yml/badge.svg)](https://github.com/MrPurple666/pvzge-android/actions/workflows/release.yml)
+A native Android wrapper for the [PvZ2 Gardendless](https://github.com/Gzh0821/pvzge_web) web game. No emulation, no cloud streaming — the full game runs locally on your device.
+
+<p align="center">
+  <a href="https://github.com/MrPurple666/pvzge-android/releases/latest"><img src="https://img.shields.io/github/v/release/MrPurple666/pvzge-android?label=latest&color=4CAF50" alt="Latest release"></a>
+  <a href="https://github.com/MrPurple666/pvzge-android/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/MrPurple666/pvzge-android/release.yml?label=CI" alt="Build status"></a>
+  <img src="https://img.shields.io/badge/min%20SDK-27%20(Android%208.1)-5277C3" alt="Min SDK">
+  <img src="https://img.shields.io/badge/size-~1.1%20GB-orange" alt="APK size">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="License"></a>
+</p>
+
+---
 
 ## Download
 
-Go to [Releases](https://github.com/MrPurple666/pvzge-android/releases) and grab the latest APK. ~1.1 GB — includes all game assets, no network required after install.
+Get the latest APK from **[GitHub Releases](https://github.com/MrPurple666/pvzge-android/releases/latest)**.
 
-## How it works
-
-The game is a [Cocos Creator 3.8](https://www.cocos.com/creator) web build. This project wraps it in a native Android `WebView` using `WebViewAssetLoader` to serve game files directly from local storage — no HTTP server, no Flutter engine, minimal overhead.
-
-Touch input is converted to mouse events via a custom `MouseGameWebView`: single-finger drag = left click, two-finger swipe = scroll wheel, two-finger tap = right-click, long-press = right-click.
-
-## Build from source
-
-```bash
-# 1. Clone with game submodule
-git clone https://github.com/MrPurple666/pvzge-android.git
-cd pvzge-android
-
-# 2. Place the game files (or symlink if you have pvzge_web checked out)
-#    The game files should be at ../pvzge_web/docs/ relative to this project
-
-# 3. Create the game zip (first time only, ~75s)
-./gradlew createGameZip
-
-# 4. Build
-./gradlew assembleDebug      # debug APK
-./gradlew assembleRelease    # signed release APK
-```
-
-Output: `app/build/outputs/apk/debug/app-debug.apk` or `app/build/outputs/apk/release/app-release.apk`
-
-## Automated builds
-
-A [GitHub Actions workflow](.github/workflows/release.yml) runs daily and checks the upstream game version. When a new version is detected:
-1. Updates `versionCode` and `versionName`
-2. Builds a signed release APK
-3. Creates a GitHub Release with the APK attached
-
-The app also has a built-in updater that checks for new releases and offers to download + install them.
+> **~1.1 GB** — includes all game assets. No network required after install. The app checks for updates automatically and can install them in-app.
 
 ## Controls
 
-| Gesture | Action |
-|---|---|
-| Single-finger tap/drag | Left click (select, place, drag) |
-| Two-finger swipe | Scroll wheel (vertical & horizontal) |
-| Two-finger tap | Right click (shovel, context menu) |
-| Long-press | Right click (one-finger alternative) |
+The game expects mouse input. Touch gestures are translated automatically:
+
+| You do this | Game sees this | Use for |
+|---|---|---|
+| **Tap / drag** with one finger | Left click + drag | Select plants, place them, drag sun |
+| **Swipe** with two fingers | Scroll wheel | Zoom, browse the plant deck |
+| **Tap** with two fingers | Right click | Shovel, context menus |
+| **Long-press** with one finger | Right click | Same as above, one-handed |
+
+A gesture guide appears on first launch.
+
+## Under the hood
+
+```
+Game (JS/WASM) → WebViewAssetLoader → local files
+Touch input    → MouseGameWebView   → MouseEvent injection
+Rendering      → WebGL2 canvas      → 16:9 letterboxed
+```
+
+- **[Cocos Creator 3.8](https://www.cocos.com/creator)** engine compiled to web, running in Android's `WebView`
+- **[WebViewAssetLoader](https://developer.android.com/reference/androidx/webkit/WebViewAssetLoader)** serves files from internal storage — no HTTP server needed
+- **[MouseGameWebView](app/src/main/java/com/pvzge/gardendless/MouseGameWebView.kt)** converts touch → mouse events at the native level
+- **16:9 letterboxing** keeps the game's 1024×640 design resolution centered on any screen
+
+## Build
+
+```bash
+git clone https://github.com/MrPurple666/pvzge-android.git
+cd pvzge-android
+
+# Make sure the game files are at ../pvzge_web/docs/
+# (clone https://github.com/Gzh0821/pvzge_web if needed)
+
+./gradlew createGameZip   # one-time, ~75s — creates the 1.1 GB game bundle
+./gradlew assembleDebug   # fast — ~12s after the zip exists
+```
+
+Requires **Java 17** and **Android SDK 35**.
+
+## Automation
+
+A [GitHub Actions workflow](.github/workflows/release.yml) checks the upstream game version daily. When it changes:
+
+1. Bumps `versionCode` and `versionName`
+2. Builds a signed release APK
+3. Publishes a [GitHub Release](https://github.com/MrPurple666/pvzge-android/releases) with the APK
+
+No manual intervention needed — the release just appears.
 
 ## Credits
 
-This project builds on the excellent work of others:
+This project stands on the shoulders of two remarkable efforts:
 
-- **[Gzh0821/pvzge_web](https://github.com/Gzh0821/pvzge_web)** — the original PvZ2 Gardendless web game. An extraordinary reverse-engineering effort that brings Plants vs Zombies 2 to the web using Cocos Creator.
-- **[Cateners/gardendless-android](https://github.com/Cateners/gardendless-android)** — the reference Android port that pioneered the `WebViewAssetLoader` + `MouseGameWebView` architecture. Their touch-to-mouse conversion and 16:9 letterboxing are the foundation this port is built on.
+**[Gzh0821/pvzge_web](https://github.com/Gzh0821/pvzge_web)** — The original PvZ2 Gardendless web game. An extraordinary reverse-engineering project that faithfully recreates Plants vs Zombies 2 using only web technologies. Without this, none of the ports would exist.
 
-## What's different from the reference
+**[Cateners/gardendless-android](https://github.com/Cateners/gardendless-android)** — The first Android port that figured out the hard problems: `WebViewAssetLoader` for serving local game files, `MouseGameWebView` for touch→mouse conversion, and 16:9 aspect ratio handling. This project adopts that proven architecture.
 
-While sharing the same core architecture, this port adds several features:
+## Improvements
 
-- **Atomic extraction** — extracts to a temp directory first, then swaps into place. If the app is killed mid-extraction, it rolls back to the previous working version instead of leaving a corrupted install.
-- **Extraction progress** — determinate progress bar with percentage, rather than an indeterminate spinner.
-- **Pre-update save-data warning** — warns about potential save incompatibility before updating, with the option to postpone.
-- **Horizontal scrolling** — two-finger swipe detects both axes, not just vertical.
-- **Long-press for right-click** — single-finger accessibility for shovel and context menus.
-- **Instant touch blocking** — injected into the HTML before the page loads via `shouldInterceptRequest`, rather than polling after page load.
-- **In-app updater** — checks GitHub Releases and offers to download + install new versions.
-- **Automated CI/CD** — GitHub Actions detects upstream game updates, builds, and releases automatically.
-- **Gesture tutorial** — first-launch overlay explaining the touch controls.
-- **Remote debugging** — `WebView` debugging enabled in debug builds.
-- **GPU optimizations** — disables algorithmic darkening, force-dark, and unnecessary safe browsing checks.
-- **Timestamped save exports** — each export gets a unique filename instead of overwriting the previous one.
-- **Lifecycle safety** — uses `lifecycleScope` instead of `GlobalScope` to prevent crashes on activity destruction.
+Built on the same foundation, with these additions:
+
+| Area | What |
+|---|---|
+| **Reliability** | Atomic extraction with rollback, lifecycle-safe coroutines, retry-on-error dialogs |
+| **UX** | Determinate extraction progress, pre-update save-data warning, gesture tutorial on first launch |
+| **Input** | Horizontal scrolling, long-press for right-click, `ACTION_CANCEL` handling, right-click cursor positioning |
+| **Performance** | Instant touch blocking via HTML injection, GPU darkening disabled, force-dark prevented |
+| **Automation** | CI/CD pipeline auto-builds and releases, in-app updater checks GitHub Releases |
+| **Dev** | `BuildConfig.DEBUG` remote WebView debugging, `onConsoleMessage` logging, `onReceivedError` tracking |
+| **Polish** | Timestamped save exports, version shown during extraction, `resizeableActivity=false` for layout stability |
+
+## FAQ
+
+**Why is the APK so large?**  
+It includes all game assets (~1.2 GB of textures, sounds, and animations). This means the game runs entirely offline after install — no additional downloads, no waiting.
+
+**Will my save data survive an update?**  
+Probably, but game version changes can occasionally break save compatibility. You'll see a warning before updating, and we recommend exporting your save first (in-game option).
+
+**Why not on the Play Store?**  
+The game is a fan project using copyrighted material. It's distributed via GitHub Releases to avoid store takedowns.
+
+**Can I use a controller?**  
+Not yet — the game is touch/mouse only. The touch→mouse conversion handles all input.
 
 ## License
 
-This project is licensed under GPL-3.0, matching the reference port. The game files are from [Gzh0821/pvzge_web](https://github.com/Gzh0821/pvzge_web) and carry their own license.
+GPL-3.0. The game files from [Gzh0821/pvzge_web](https://github.com/Gzh0821/pvzge_web) carry their own license.
