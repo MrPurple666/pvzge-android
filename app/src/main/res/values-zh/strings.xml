@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Gardendless</string>
+    <string name="unzipping">正在解压文件…</string>
+    <string name="extraction_progress">解压中… %1$d%%</string>
+    <string name="extraction_error">解压失败。请检查存储空间后重试。</string>
+    <string name="retry">重试</string>
+    <string name="close_app">关闭</string>
+    <string name="gesture_click">单击 = 点击</string>
+    <string name="gesture_scroll">双指滑动 = 滚轮</string>
+    <string name="gesture_rightclick">双指点击 = 右键</string>
+    <string name="longpress_rightclick">长按 = 右键</string>
+    <string name="notification_channel_extraction">游戏安装</string>
+    <string name="notification_extraction_done">游戏已就绪！点击开始游玩。</string>
+    <string name="export">导出存档</string>
+    <string name="exit_confirm">确定退出游戏？</string>
+    <string name="yes">退出</string>
+    <string name="no">返回</string>
+    <string name="hint">提示</string>
+    <string name="description">非官方移植版本</string>
+</resources>

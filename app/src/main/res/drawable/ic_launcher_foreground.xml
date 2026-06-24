@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Sunflower/shield game icon -->
+    <path
+        android:fillColor="#FFC107"
+        android:pathData="M54,22 C54,22 40,26 34,36 C28,46 30,58 38,64 L40,66 L40,86 L68,86 L68,66 L70,64 C78,58 80,46 74,36 C68,26 54,22 54,22 Z" />
+    <path
+        android:fillColor="#FF9800"
+        android:pathData="M54,34 C54,34 44,38 40,46 C36,54 42,62 48,64 L54,64 L54,34 Z" />
+    <path
+        android:fillColor="#4CAF50"
+        android:pathData="M42,70 L66,70 L66,82 L42,82 Z" />
+</vector>
