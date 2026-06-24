@@ -4,7 +4,7 @@
     <string name="update_warning">游戏有新版本可用。更新后存档可能不兼容，请在继续前导出存档备份！</string>
     <string name="update_continue">更新</string>
     <string name="update_later">稍后</string>
-    <string name="app_name">Gardendless</string>
+    <string name="app_name">PvZ: Gardenless</string>
     <string name="unzipping">正在解压文件…</string>
     <string name="extraction_progress">解压中… %1$d%%</string>
     <string name="extraction_error">解压失败。请检查存储空间后重试。</string>

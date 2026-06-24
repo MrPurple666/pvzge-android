@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Gardendless</string>
+    <string name="app_name">PvZ: Gardenless</string>
     <string name="update_title">Update Available</string>
     <string name="update_warning">A new version of the game is available. Save data may become incompatible. Please export your save before continuing.</string>
     <string name="update_continue">Update</string>
