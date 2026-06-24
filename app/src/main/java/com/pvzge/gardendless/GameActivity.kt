@@ -199,7 +199,7 @@ class GameActivity : AppCompatActivity() {
      */
     private fun patchSettingsForRemoteResources(destRoot: File) {
         try {
-            val settingsFile = File(destRoot, "docs/src/settings.json")
+            val settingsFile = File(destRoot, "src/settings.json")
             if (!settingsFile.exists()) return
 
             val json = JSONObject(settingsFile.readText())
@@ -250,7 +250,7 @@ class GameActivity : AppCompatActivity() {
             .setDomain("appassets.androidplatform.net")
             .addPathHandler(
                 "/",
-                InternalStoragePathHandler(this, File(filesDir, "pvzge_web/docs"))
+                InternalStoragePathHandler(this, File(filesDir, "pvzge_web"))
             )
             .build()
 
