@@ -35,6 +35,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
+import org.json.JSONArray
+import org.json.JSONObject
 import java.util.Date
 import java.util.Locale
 import java.util.zip.ZipEntry
@@ -152,6 +154,9 @@ class GameActivity : AppCompatActivity() {
                 // Clean up temp zip
                 zipPath.delete()
 
+                // Configure remote resource loading from CDN (#23)
+                patchSettingsForRemoteResources(destRoot)
+
                 if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
                     withContext(Dispatchers.Main) {
                         extractionDialog?.dismiss()
@@ -187,6 +192,28 @@ class GameActivity : AppCompatActivity() {
             .show()
     }
 
+    /**
+     * Patches the game's settings.json to load the 1.2 GB resources bundle
+     * from the CDN instead of expecting it locally. Cocos natively handles
+     * remote bundle loading — no custom download code needed.
+     */
+    private fun patchSettingsForRemoteResources(destRoot: File) {
+        try {
+            val settingsFile = File(destRoot, "docs/src/settings.json")
+            if (!settingsFile.exists()) return
+
+            val json = JSONObject(settingsFile.readText())
+            val assets = json.getJSONObject("assets")
+            assets.put("server", "https://play.pvzge.com")
+            val remoteBundles = JSONArray()
+            remoteBundles.put("resources")
+            assets.put("remoteBundles", remoteBundles)
+
+            settingsFile.writeText(json.toString())
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
     private fun setupWebview() {
         // WebView was pre-warmed in onCreate (#4)
         // Apply GPU and security settings
