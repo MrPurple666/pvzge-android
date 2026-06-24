@@ -291,15 +291,27 @@ class GameActivity : AppCompatActivity() {
                 } catch (e: Exception) { return false }
             }
 
-            // #12: onPageFinished with polling instead of fixed 8s delay
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
-                injectTouchBlocker(0)
+                // Show gesture hints on first launch with a short delay
+                webView.postDelayed({
+                    val sp = getSharedPreferences("app_data", MODE_PRIVATE)
+                    if (sp.getInt("extracted_version", 0) == 1) {
+                        showGestureHints()
+                    }
+                }, 3000)
             }
 
             override fun shouldInterceptRequest(
                 view: WebView, request: WebResourceRequest
-            ): WebResourceResponse? = assetLoader.shouldInterceptRequest(request.url)
+            ): WebResourceResponse? {
+                val response = assetLoader.shouldInterceptRequest(request.url) ?: return null
+                // Inject touch-blocking script into index.html before browser parses it
+                if (request.url.toString() == "https://appassets.androidplatform.net/index.html") {
+                    return injectTouchBlockerIntoHtml(response)
+                }
+                return response
+            }
         }
 
         webView.webChromeClient = object : WebChromeClient() {
@@ -333,43 +345,33 @@ class GameActivity : AppCompatActivity() {
         setupBackNavigation()
     }
 
-    // #12: Poll for GameCanvas existence instead of fixed delay
-    private fun injectTouchBlocker(attempt: Int) {
-        if (attempt >= 10) return
-        webView.evaluateJavascript(
-            "(function(){ return document.getElementById('GameCanvas') !== null ? 'true' : 'false'; })()"
-        ) { result ->
-            if (result == "true") {
-                val js = """
-(function() {
-    var target = document.getElementById("GameCanvas");
-    if (!target) return;
-    target.addEventListener("touchstart", function(e) {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-    }, { capture: true, passive: false });
-    target.addEventListener("touchmove", function(e) {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-    }, { capture: true, passive: false });
-    target.addEventListener("touchend", function(e) {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-    }, { capture: true, passive: false });
-})();
-                """.trimIndent()
-                webView.evaluateJavascript(js, null)
-                val sp = getSharedPreferences("app_data", MODE_PRIVATE)
-                if (sp.getInt("extracted_version", 0) == 1) {
-                    showGestureHints()
-                }
-            } else {
-                webView.postDelayed({ injectTouchBlocker(attempt + 1) }, 500)
-            }
-        }
+    /**
+     * Injects touch-blocking JavaScript directly into index.html before the browser
+     * parses it. Uses a MutationObserver to attach capture-phase listeners the moment
+     * GameCanvas is created — zero polling delay, works for both WebGL and Canvas2D.
+     */
+    private fun injectTouchBlockerIntoHtml(response: WebResourceResponse): WebResourceResponse {
+        val html = response.data.bufferedReader().readText()
+        val tag = """
+<script>
+(function(){
+var o=new MutationObserver(function(){
+var c=document.getElementById('GameCanvas');
+if(c){
+c.addEventListener('touchstart',function(e){e.preventDefault();e.stopImmediatePropagation()},{capture:true,passive:false});
+c.addEventListener('touchmove',function(e){e.preventDefault();e.stopImmediatePropagation()},{capture:true,passive:false});
+c.addEventListener('touchend',function(e){e.preventDefault();e.stopImmediatePropagation()},{capture:true,passive:false});
+o.disconnect()}});
+o.observe(document.body||document.documentElement,{childList:true,subtree:true})})();
+</script>
+</body>""".trimIndent()
+        val modified = html.replace("</body>", tag)
+        return WebResourceResponse(
+            response.mimeType,
+            response.encoding,
+            modified.byteInputStream()
+        )
     }
-
-
     // #16: Gesture hint overlay for first-time users
     private fun showGestureHints() {
         val js = """
