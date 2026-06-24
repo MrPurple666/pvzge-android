@@ -77,7 +77,7 @@ No manual intervention needed — the release just appears.
 
 This project stands on the shoulders of two remarkable efforts:
 
-**[Gzh0821/pvzge_web](https://github.com/Gzh0821/pvzge_web)** — The original PvZ2 Gardendless web game. An extraordinary reverse-engineering project that faithfully recreates Plants vs Zombies 2 using only web technologies. Without this, none of the ports would exist.
+**[Gzh0821/pvzge_web](https://github.com/Gzh0821/pvzge_web)** — The original PvZ2 Gardendless web version. An extraordinary recreates Plants vs Zombies 2.
 
 **[Cateners/gardendless-android](https://github.com/Cateners/gardendless-android)** — The first Android port that figured out the hard problems: `WebViewAssetLoader` for serving local game files, `MouseGameWebView` for touch→mouse conversion, and 16:9 aspect ratio handling. This project adopts that proven architecture.
 
