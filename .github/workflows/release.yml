@@ -30,7 +30,7 @@ jobs:
           LATEST_TAG=$(git tag --sort=-v:refname | head -1 | sed 's/^v//')
           echo "Upstream: $UPSTREAM"
           echo "Latest tag: ${LATEST_TAG:-none}"
-          if [ "$UPSTREAM" = "$LATEST_TAG" ]; then
+          if [ "$UPSTREAM" = "$LATEST_TAG" ] && [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
             echo "Version unchanged — skipping"
             echo "BUILD=false" >> $GITHUB_OUTPUT
           else
