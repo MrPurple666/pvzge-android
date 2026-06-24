@@ -52,6 +52,10 @@ jobs:
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-35" "build-tools;35.0.0" > /dev/null 2>&1 || true
 
+      - name: Clone upstream game files
+        if: steps.version.outputs.BUILD == 'true'
+        run: git clone --depth 1 https://github.com/Gzh0821/pvzge_web.git ../pvzge_web
+
       - name: Update version
         if: steps.version.outputs.BUILD == 'true'
         run: |
