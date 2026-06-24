@@ -43,7 +43,11 @@ android {
     }
 }
 
-val zipGameAssets by tasks.registering(Zip::class) {
+val gameZipFile = file("src/main/assets/pvzge_web.zip")
+
+val createGameZip by tasks.registering(Zip::class) {
+    group = "game"
+    description = "Creates pvzge_web.zip from ../pvzge_web/docs (run once, ~2 min)"
     from(rootProject.file("../pvzge_web/docs"))
     archiveFileName.set("pvzge_web.zip")
     destinationDirectory.set(file("src/main/assets"))
@@ -51,7 +55,7 @@ val zipGameAssets by tasks.registering(Zip::class) {
 }
 
 tasks.named("preBuild") {
-    dependsOn(zipGameAssets)
+    dependsOn(createGameZip)
 }
 
 dependencies {
