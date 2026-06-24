@@ -294,7 +294,6 @@ class GameActivity : AppCompatActivity() {
             // #12: onPageFinished with polling instead of fixed 8s delay
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
-                showLoadingIndicator()
                 injectTouchBlocker(0)
             }
 
@@ -370,29 +369,6 @@ class GameActivity : AppCompatActivity() {
         }
     }
 
-    private fun showLoadingIndicator() {
-        val js = """
-(function() {
-    if (document.getElementById('gardendless-loading')) return;
-    var div = document.createElement('div');
-    div.id = 'gardendless-loading';
-    div.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;' +
-        'background:#040909;z-index:99998;display:flex;flex-direction:column;' +
-        'align-items:center;justify-content:center;color:#aaa;font-family:sans-serif;' +
-        'font-size:18px;pointer-events:none;transition:opacity 0.5s;';
-    div.innerHTML = '<div style="font-size:48px;margin-bottom:20px;">&#127793;</div>' +
-        '<div>Loading game\u2026</div>';
-    document.body.appendChild(div);
-    // Cocos uses WebGL — can't read pixels from a 2D context.
-    // Fade after 4 seconds (Cocos splash is 2s + 2s margin).
-    setTimeout(function() {
-        div.style.opacity = '0';
-        setTimeout(function() { if (div.parentNode) div.remove(); }, 500);
-    }, 4000);
-})();
-        """.trimIndent()
-        webView.evaluateJavascript(js, null)
-    }
 
     // #16: Gesture hint overlay for first-time users
     private fun showGestureHints() {
