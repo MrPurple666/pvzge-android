@@ -19,6 +19,10 @@ android {
         buildConfig = true
     }
 
+    aaptOptions {
+        noCompress += "zip"
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -44,7 +48,6 @@ val zipGameAssets by tasks.registering(Zip::class) {
     archiveFileName.set("pvzge_web.zip")
     destinationDirectory.set(file("src/main/assets"))
     exclude(".nojekyll", "CNAME")
-    exclude("assets/resources/**")  // 1.2 GB — downloaded on first launch
 }
 
 tasks.named("preBuild") {
