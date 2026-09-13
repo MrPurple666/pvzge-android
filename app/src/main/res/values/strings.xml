@@ -22,4 +22,11 @@
     <string name="no">Return</string>
     <string name="hint">Warning</string>
     <string name="description">This is an unofficial port.</string>
+    <string name="export_done">Exported</string>
+    <string name="export_failed">Export failed</string>
+    <string name="documents_root_title">Gardendless</string>
+    <string name="documents_root_summary">Game files</string>
+    <string name="documents_error_delete_root">Cannot delete the game directory itself</string>
+    <string name="documents_error_target_exists">A file with that name already exists</string>
+    <string name="documents_error_rename_failed">Rename failed</string>
 </resources>

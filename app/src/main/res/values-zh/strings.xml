@@ -22,4 +22,11 @@
     <string name="no">返回</string>
     <string name="hint">提示</string>
     <string name="description">非官方移植版本</string>
+    <string name="export_done">已导出</string>
+    <string name="export_failed">导出失败</string>
+    <string name="documents_root_title">Gardendless</string>
+    <string name="documents_root_summary">游戏文件</string>
+    <string name="documents_error_delete_root">不能删除游戏目录本身</string>
+    <string name="documents_error_target_exists">已存在同名文件</string>
+    <string name="documents_error_rename_failed">重命名失败</string>
 </resources>

@@ -1,5 +1,6 @@
 // PvZ2 Gardendless Android Port
 // Copyright (C) 2026  Open Source Gardendless Contributors
+// Fullscreen and export bridge adapted from Caten Hu, copyright (C) 2026.
 // License: GPL-3.0
 
 package com.pvzge.gardendless
@@ -18,6 +19,8 @@ import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.webkit.*
 import android.widget.ProgressBar
+import android.widget.Toast
+import android.webkit.WebChromeClient.CustomViewCallback
 import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
@@ -34,14 +37,22 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipInputStream
 
 class GameActivity : AppCompatActivity() {
+
+    private lateinit var aspectContainer: AspectRatioFrameLayout
+    private val prefs by lazy { getSharedPreferences("app_data", MODE_PRIVATE) }
+    private val EXPORT_SAVE_RESULT_CODE = 102
+    private var pendingExport: ByteArray? = null
+    @Volatile private var pendingExportName: String? = null
+    private var fullscreenCallback: CustomViewCallback? = null
+
+    private companion object {
+        const val PREF_FULLSCREEN = "webview_fullscreen"
+    }
 
     private lateinit var webView: WebView
     private val FILE_CHOOSER_RESULT_CODE = 101
@@ -227,33 +238,15 @@ class GameActivity : AppCompatActivity() {
         // WebView was pre-warmed in onCreate
         // Apply GPU and security settings
 
-        val container = object : android.widget.FrameLayout(this) {
-            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-                super.onMeasure(widthMeasureSpec, heightMeasureSpec)
-                val sw = measuredWidth
-                val sh = measuredHeight
-                val tw: Int
-                val th: Int
-                if (sw * 9 > sh * 16) {
-                    tw = sh * 16 / 9
-                    th = sh
-                } else {
-                    tw = sw
-                    th = sw * 9 / 16
-                }
-                getChildAt(0).measure(
-                    MeasureSpec.makeMeasureSpec(tw, MeasureSpec.EXACTLY),
-                    MeasureSpec.makeMeasureSpec(th, MeasureSpec.EXACTLY)
-                )
-            }
+        aspectContainer = AspectRatioFrameLayout(this).apply {
+            setBackgroundColor(android.graphics.Color.BLACK)
+            fullscreen = prefs.getBoolean(PREF_FULLSCREEN, false)
+            addView(webView, android.widget.FrameLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { gravity = android.view.Gravity.CENTER })
         }
-        container.setBackgroundColor(android.graphics.Color.BLACK)
-        val lp = android.widget.FrameLayout.LayoutParams(
-            android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
-            android.view.ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { gravity = android.view.Gravity.CENTER }
-        container.addView(webView, lp)
-        setContentView(container)
+        setContentView(aspectContainer)
 
         val assetLoader = WebViewAssetLoader.Builder()
             .setDomain("appassets.androidplatform.net")
@@ -286,33 +279,43 @@ class GameActivity : AppCompatActivity() {
         //     webView.setRenderProcessPriority(WebView.RENDERER_PRIORITY_IMPORTANT)
         // }
 
-        // Save file export (timestamped filename)
-        webView.setDownloadListener { url, _, _, mimeType, _ ->
-            if (url.startsWith("data:")) {
-                try {
-                    val data: String
-                    // Proper base64 decoding
-                    if (url.contains(";base64,")) {
-                        val base64Part = url.substringAfter(";base64,").split(",").firstOrNull() ?: return@setDownloadListener
-                        data = String(Base64.decode(base64Part, Base64.DEFAULT))
-                    } else {
-                        val parts = url.split(",")
-                        if (parts.size < 2) return@setDownloadListener
-                        data = Uri.decode(parts.subList(1, parts.size).joinToString(","))
-                    }
-                    val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-                    val cacheFile = File(cacheDir, "gardendless_save_${timestamp}.json")
-                    cacheFile.writeText(data)
-                    val contentUri = FileProvider.getUriForFile(this, "${packageName}.fileprovider", cacheFile)
-                    val intent = Intent(Intent.ACTION_SEND).apply {
-                        type = mimeType
-                        putExtra(Intent.EXTRA_STREAM, contentUri)
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
-                    startActivity(Intent.createChooser(intent, getString(R.string.export)))
-                } catch (e: Exception) {
-                    e.printStackTrace()
+        webView.addJavascriptInterface(object {
+            @JavascriptInterface
+            fun setFullscreen(value: Boolean) {
+                webView.post { setWebviewFullscreen(value) }
+            }
+
+            @JavascriptInterface
+            fun setExportName(name: String) {
+                pendingExportName = name.substringAfterLast('/').substringAfterLast('\\')
+            }
+        }, "GardendlessBridge")
+
+        webView.setDownloadListener { url, _, contentDisposition, mimeType, _ ->
+            if (!url.startsWith("data:") || pendingExport != null) return@setDownloadListener
+            try {
+                val comma = url.indexOf(',')
+                require(comma >= 0) { "Invalid data URI" }
+                val payload = url.substring(comma + 1)
+                pendingExport = if (url.substring(0, comma).endsWith(";base64", true)) {
+                    Base64.decode(Uri.decode(payload), Base64.DEFAULT)
+                } else {
+                    Uri.decode(payload).toByteArray(Charsets.UTF_8)
                 }
+                val fallbackType = mimeType?.takeIf { it.isNotBlank() } ?: "application/octet-stream"
+                val name = pendingExportName?.takeIf { it.isNotBlank() }
+                    ?: suggestFileName(contentDisposition, fallbackType)
+                pendingExportName = null
+                val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                    type = mimeFromExtension(name) ?: fallbackType
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    putExtra(Intent.EXTRA_TITLE, name)
+                }
+                startActivityForResult(intent, EXPORT_SAVE_RESULT_CODE)
+            } catch (e: Exception) {
+                pendingExport = null
+                pendingExportName = null
+                Toast.makeText(this, R.string.export_failed, Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -323,7 +326,8 @@ class GameActivity : AppCompatActivity() {
                 try {
                     startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
                     return true
-                } catch (e: Exception) { return false }
+                } catch (e: Exception) { /* Keep external pages out of the bridged WebView. */ }
+                return true
             }
 
             override fun onReceivedError(
@@ -364,6 +368,22 @@ class GameActivity : AppCompatActivity() {
         }
 
         webView.webChromeClient = object : WebChromeClient() {
+            override fun onShowCustomView(view: View, callback: CustomViewCallback) {
+                if (fullscreenCallback != null) {
+                    callback.onCustomViewHidden()
+                    return
+                }
+                fullscreenCallback = callback
+                setWebviewFullscreen(true)
+            }
+
+            override fun onHideCustomView() {
+                val callback = fullscreenCallback ?: return
+                fullscreenCallback = null
+                callback.onCustomViewHidden()
+                setWebviewFullscreen(false)
+            }
+
             override fun onConsoleMessage(msg: ConsoleMessage?): Boolean {
                 msg?.let { android.util.Log.d("Gardendless", "[${it.messageLevel()}] ${it.message()}") }
                 return true
@@ -416,7 +436,14 @@ o.disconnect()}});
 o.observe(document.body||document.documentElement,{childList:true,subtree:true})})();
 </script>
 </body>""".trimIndent()
-        val modified = html.replace("</body>", tag)
+        val head = Regex("<head(?:\\s[^>]*)?>", RegexOption.IGNORE_CASE).find(html)
+        val bridgeTag = "<script>" + gameBridgeHookJs + "</script>"
+        val hookedHtml = if (head != null) {
+            html.replaceRange(head.range, head.value + bridgeTag)
+        } else {
+            bridgeTag + html
+        }
+        val modified = hookedHtml.replace("</body>", tag)
         return WebResourceResponse(
             response.mimeType,
             response.encoding,
@@ -457,11 +484,69 @@ o.observe(document.body||document.documentElement,{childList:true,subtree:true})
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == FILE_CHOOSER_RESULT_CODE) {
-            val result = if (data == null || resultCode != RESULT_OK) null else arrayOf(data.data!!)
-            filePathCallback?.onReceiveValue(result as Array<Uri>?)
-            filePathCallback = null
+        when (requestCode) {
+            FILE_CHOOSER_RESULT_CODE -> {
+                val result = data?.data?.takeIf { resultCode == RESULT_OK }?.let { arrayOf(it) }
+                filePathCallback?.onReceiveValue(result)
+                filePathCallback = null
+            }
+            EXPORT_SAVE_RESULT_CODE -> {
+                val bytes = pendingExport
+                pendingExport = null
+                val uri = data?.data
+                if (resultCode == RESULT_OK && bytes != null && uri != null) {
+                    lifecycleScope.launch {
+                        val ok = withContext(Dispatchers.IO) {
+                            runCatching {
+                                contentResolver.openOutputStream(uri, "wt")?.use { it.write(bytes) }
+                                    ?: throw java.io.IOException("Cannot open export destination")
+                            }.isSuccess
+                        }
+                        Toast.makeText(this@GameActivity,
+                            if (ok) R.string.export_done else R.string.export_failed,
+                            Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
         }
+    }
+
+    override fun onDestroy() {
+        fullscreenCallback?.onCustomViewHidden()
+        fullscreenCallback = null
+        filePathCallback?.onReceiveValue(null)
+        filePathCallback = null
+        if (::webView.isInitialized) {
+            webView.removeJavascriptInterface("GardendlessBridge")
+            webView.destroy()
+        }
+        super.onDestroy()
+    }
+
+    private fun suggestFileName(contentDisposition: String?, mimeType: String): String {
+        contentDisposition
+            ?.let { Regex("""filename\*?=(?:UTF-8''|utf-8'')?"?([^";]+)"?""", RegexOption.IGNORE_CASE).find(it) }
+            ?.groupValues?.get(1)
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?.let { return it }
+
+        val time = java.time.LocalDateTime.now()
+            .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
+        return "gardendless_$time.${mimeToExtension(mimeType)}"
+    }
+
+    private fun mimeToExtension(mimeType: String): String = when (val type = mimeType.substringBefore(';').trim()) {
+        "application/json" -> "json"
+        "text/plain" -> "txt"
+        "application/octet-stream" -> "bin"
+        else -> type.substringAfter('/').takeIf { it.all(Char::isLetterOrDigit) } ?: "bin"
+    }
+
+    private fun mimeFromExtension(fileName: String): String? {
+        val ext = fileName.substringAfterLast('.', "")
+            .takeIf { it.isNotBlank() && it != fileName } ?: return null
+        return MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext.lowercase())
     }
 
     private fun setupFullScreen() {
@@ -492,6 +577,91 @@ o.observe(document.body||document.documentElement,{childList:true,subtree:true})
         if (getSharedPreferences("app_data", MODE_PRIVATE).getBoolean("flag_secure", false)) {
             window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         }
+    }
+
+    private val gameBridgeHookJs = """
+(function() {
+    if (window.__gdHooked) return;
+    window.__gdHooked = true;
+
+    var bridge = window.GardendlessBridge;
+
+
+    // Ignore the initial game startup sync so the saved fullscreen preference survives.
+    var bootGuard = true;
+    setTimeout(function() { bootGuard = false; }, 6000);
+
+    var setFullscreen = function(v) {
+        if (bootGuard && !v) { bootGuard = false; return; }
+        bootGuard = false;
+        try { bridge.setFullscreen(!!v); } catch (e) { /* Bridge unavailable. */ }
+    };
+
+    var setExportName = function(name) {
+        if (!name) return;
+        try { bridge.setExportName(String(name)); } catch (e) { /* Bridge unavailable. */ }
+    };
+
+    var isDataHref = function(el) {
+        return (el && el.getAttribute && (el.getAttribute('href') || '').indexOf('data:') === 0);
+    };
+    var origClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function() {
+        if (this.download && isDataHref(this)) setExportName(this.download);
+        return origClick.apply(this, arguments);
+    };
+    document.addEventListener('click', function(e) {
+        var a = e.target && e.target.closest ? e.target.closest('a[download]') : null;
+        if (a && isDataHref(a)) setExportName(a.getAttribute('download'));
+    }, true);
+
+    var ep = Element.prototype;
+    var req = ep.requestFullscreen || ep.webkitRequestFullscreen || ep.webkitRequestFullScreen;
+    if (req) {
+        ep.requestFullscreen = function() { setFullscreen(true); return req.apply(this, arguments); };
+    }
+    var dp = Document.prototype;
+    var exit = dp.exitFullscreen || dp.webkitExitFullscreen || dp.webkitCancelFullScreen;
+    if (exit) {
+        dp.exitFullscreen = function() { setFullscreen(false); return exit.apply(this, arguments); };
+    }
+
+    var patchTauri = function() {
+        var ti = window.__TAURI_INTERNALS__;
+        if (!ti || !ti.invoke || ti.__gdHooked) return false;
+        ti.__gdHooked = true;
+        var orig = ti.invoke;
+        ti.invoke = function(cmd, args) {
+            if (cmd === 'plugin:window|set_fullscreen') {
+                setFullscreen(!!(args && args.value));
+                return Promise.resolve(null);
+            }
+            if (cmd === 'plugin:dialog|save') {
+
+                var raw = args && (args.defaultPath || (args.options && args.options.defaultPath));
+                var name = raw ? String(raw).split(/[\\/]/).pop() : '';
+                if (name) {
+                    setExportName(name);
+                    return Promise.resolve(name);
+                }
+            }
+            return orig.apply(this, arguments);
+        };
+        return true;
+    };
+
+    if (!patchTauri()) {
+        var tries = 0;
+        var timer = setInterval(function() {
+            if (patchTauri() || ++tries > 100) clearInterval(timer);
+        }, 50);
+    }
+})();
+    """.trimIndent()
+
+    private fun setWebviewFullscreen(enabled: Boolean) {
+        aspectContainer.fullscreen = enabled
+        prefs.edit().putBoolean(PREF_FULLSCREEN, enabled).apply()
     }
 
     private fun setupBackNavigation() {

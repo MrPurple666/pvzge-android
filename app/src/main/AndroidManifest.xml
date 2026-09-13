@@ -20,8 +20,8 @@
             android:name=".GameActivity"
             android:exported="true"
             android:screenOrientation="sensorLandscape"
-            android:configChanges="uiMode|orientation|screenSize|keyboard|keyboardHidden|screenLayout">
-            android:resizeableActivity="false"
+            android:configChanges="uiMode|orientation|screenSize|keyboard|keyboardHidden|screenLayout"
+            android:resizeableActivity="false">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -36,6 +36,16 @@
             <meta-data
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
+        </provider>
+        <provider
+            android:name=".GameDocumentsProvider"
+            android:authorities="${applicationId}.documents"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter>
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+            </intent-filter>
         </provider>
     </application>
 

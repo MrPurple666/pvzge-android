@@ -1,6 +1,7 @@
 *.apk
 *.aab
 *.jks
+*.patch
 keystore.properties
 local.properties
 .gradle/
