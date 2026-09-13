@@ -34,6 +34,8 @@ import androidx.webkit.WebViewAssetLoader.InternalStoragePathHandler
 import com.google.android.material.color.DynamicColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
+import androidx.lifecycle.withResumed
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -512,6 +514,8 @@ o.observe(document.body||document.documentElement,{childList:true,subtree:true})
     }
 
     override fun onDestroy() {
+        updateDialog?.dismiss()
+        updateDialog = null
         fullscreenCallback?.onCustomViewHidden()
         fullscreenCallback = null
         filePathCallback?.onReceiveValue(null)
@@ -718,146 +722,195 @@ o.observe(document.body||document.documentElement,{childList:true,subtree:true})
         nm.notify(NOTIFICATION_ID, notification)
     }
 
-    // --- In-app updater ---
-
     private var updateCheckInProgress = false
+    private var updateDownloadInProgress = false
+    private var updateDialog: android.app.Dialog? = null
+    private val updateApk by lazy { File(cacheDir, "updates/update.apk") }
+    private val installPermissionLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) {
+        if (packageManager.canRequestPackageInstalls()) {
+            installDownloadedUpdate()
+        } else {
+            showUpdateError(getString(R.string.update_permission_required)) { installDownloadedUpdate() }
+        }
+    }
 
     private fun checkForAppUpdate() {
-        if (updateCheckInProgress) return
-        val sp = getSharedPreferences("app_data", MODE_PRIVATE)
-        val lastCheck = sp.getLong("last_update_check", 0)
-        if (System.currentTimeMillis() - lastCheck < 24 * 60 * 60 * 1000) return // once per day
-
+        if (updateCheckInProgress || updateDownloadInProgress) return
+        val elapsed = System.currentTimeMillis() - prefs.getLong("last_update_check", 0)
+        if (elapsed in 0 until 24 * 60 * 60 * 1000L) return
         updateCheckInProgress = true
-        sp.edit().putLong("last_update_check", System.currentTimeMillis()).apply()
-
-        lifecycleScope.launch(Dispatchers.IO) {
+        lifecycleScope.launch {
             try {
-                val url = java.net.URL("https://api.github.com/repos/MrPurple666/pvzge-android/releases/latest")
-                val conn = url.openConnection() as java.net.HttpURLConnection
-                conn.setRequestProperty("Accept", "application/vnd.github.v3+json")
-                conn.connectTimeout = 10000
-                conn.readTimeout = 10000
-
-                if (conn.responseCode != 200) { conn.disconnect(); return@launch }
-                val json = org.json.JSONObject(conn.inputStream.bufferedReader().readText())
-                conn.disconnect()
-
-                val tagName = json.optString("tag_name", "").removePrefix("v")
-                val currentVersion = packageManager.getPackageInfo(packageName, 0).versionName ?: return@launch
-                if (tagName == currentVersion) return@launch
-
-                val remote = tagName.split(".").map { it.toIntOrNull() ?: 0 }
-                val local = currentVersion.split(".").map { it.toIntOrNull() ?: 0 }
-                val isNewer = (0 until maxOf(remote.size, local.size)).any { i ->
-                    (remote.getOrElse(i) { 0 }) > (local.getOrElse(i) { 0 })
-                }
-                if (!isNewer) return@launch
-
-                val assets = json.getJSONArray("assets")
-                var apkUrl: String? = null
-                var apkSize = 0L
-                for (i in 0 until assets.length()) {
-                    val asset = assets.getJSONObject(i)
-                    if (asset.getString("name").endsWith(".apk")) {
-                        apkUrl = asset.getString("browser_download_url")
-                        apkSize = asset.getLong("size")
-                        break
+                val release = withContext(Dispatchers.IO) {
+                    val conn = java.net.URL(
+                        "https://api.github.com/repos/MrPurple666/pvzge-android/releases/latest"
+                    ).openConnection() as java.net.HttpURLConnection
+                    try {
+                        conn.setRequestProperty("Accept", "application/vnd.github+json")
+                        conn.setRequestProperty("User-Agent", "Gardendless-Android")
+                        conn.connectTimeout = 10000
+                        conn.readTimeout = 10000
+                        if (conn.responseCode != 200) throw java.io.IOException("HTTP ${conn.responseCode}")
+                        conn.inputStream.bufferedReader().use { org.json.JSONObject(it.readText()) }
+                    } finally {
+                        conn.disconnect()
                     }
                 }
-                if (apkUrl == null) return@launch
-
-                val body = json.optString("body", "").take(300)
-                withContext(Dispatchers.Main) {
-                    showUpdateDialog(tagName, body, apkUrl, apkSize)
+                val version = release.getString("tag_name").removePrefix("v")
+                val installed = packageManager.getPackageInfo(packageName, 0).versionName
+                if (release.optBoolean("draft") || release.optBoolean("prerelease")) return@launch
+                if (!UpdateVersion.isNewer(version, installed)) {
+                    prefs.edit().putLong("last_update_check", System.currentTimeMillis()).apply()
+                    return@launch
                 }
+                val assets = release.getJSONArray("assets")
+                val apk = (0 until assets.length()).map { assets.getJSONObject(it) }
+                    .firstOrNull { it.optString("name") == "app-release.apk" }
+                    ?: (0 until assets.length()).map { assets.getJSONObject(it) }
+                        .singleOrNull { it.optString("name").endsWith(".apk", true) }
+                    ?: return@launch
+                val url = apk.getString("browser_download_url")
+                require(url.startsWith("https://github.com/MrPurple666/pvzge-android/releases/download/"))
+                val size = apk.getLong("size")
+                require(size > 0)
+                lifecycle.withResumed {
+                    showUpdateDialog(version, release.optString("body").take(1000), url, size)
+                }
+                prefs.edit().putLong("last_update_check", System.currentTimeMillis()).apply()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
-                e.printStackTrace()
+                android.util.Log.w("Gardendless", "Update check failed", e)
             } finally {
                 updateCheckInProgress = false
             }
         }
     }
 
-    private fun showUpdateDialog(version: String, changelog: String, apkUrl: String, apkSize: Long) {
-        val sizeStr = when {
-            apkSize > 1_000_000_000 -> "${"%.1f".format(apkSize / 1_000_000_000.0)} GB"
-            apkSize > 1_000_000 -> "${"%.1f".format(apkSize / 1_000_000.0)} MB"
-            else -> "${apkSize / 1024} KB"
-        }
-        MaterialAlertDialogBuilder(this)
-            .setTitle("v$version available ($sizeStr)")
-            .setMessage(changelog.ifEmpty { "New version available." })
-            .setPositiveButton("Download") { _, _ -> downloadAndInstallApk(apkUrl) }
-            .setNegativeButton("Later", null)
+    private fun showUpdateDialog(version: String, changelog: String, url: String, size: Long) {
+        if (updateDialog?.isShowing == true) return
+        updateDialog = MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.update_available, version,
+                android.text.format.Formatter.formatFileSize(this, size)))
+            .setMessage(changelog.ifBlank { getString(R.string.update_available_message) })
+            .setPositiveButton(R.string.update_download) { _, _ -> downloadAndInstallApk(url, size) }
+            .setNegativeButton(R.string.update_later, null)
             .show()
     }
 
-    private fun downloadAndInstallApk(url: String) {
-        val nm = getSystemService(NotificationManager::class.java)
-        val notif = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setContentTitle("Downloading update…")
-            .setProgress(100, 0, true)
-            .setOngoing(true)
-            .build()
-        nm.notify(NOTIFICATION_ID + 1, notif)
-
-        lifecycleScope.launch(Dispatchers.IO) {
+    private fun downloadAndInstallApk(url: String, expectedSize: Long) {
+        if (updateDownloadInProgress) return
+        updateDownloadInProgress = true
+        val progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            max = 100
+        }
+        updateDialog = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.update_downloading)
+            .setView(progress)
+            .setCancelable(false)
+            .show()
+        lifecycleScope.launch {
+            val partial = File(cacheDir, "updates/update.apk.part")
             try {
-                val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
-                conn.connectTimeout = 30000
-                conn.readTimeout = 60000
-                val total = conn.contentLength.toLong()
-                val apkFile = File(cacheDir, "update.apk")
-
-                var downloaded = 0L
-                conn.inputStream.use { input ->
-                    apkFile.outputStream().use { output ->
-                        val buffer = ByteArray(8192)
-                        var bytes: Int
-                        while (input.read(buffer).also { bytes = it } != -1) {
-                            output.write(buffer, 0, bytes)
-                            downloaded += bytes
-                            if (total > 0) {
-                                val pct = ((downloaded * 100) / total).toInt()
-                                withContext(Dispatchers.Main) {
-                                    val progress = NotificationCompat.Builder(this@GameActivity, NOTIFICATION_CHANNEL_ID)
-                                        .setSmallIcon(android.R.drawable.stat_sys_download)
-                                        .setContentTitle("Downloading update…")
-                                        .setProgress(100, pct, false)
-                                        .setOngoing(true)
-                                        .build()
-                                    nm.notify(NOTIFICATION_ID + 1, progress)
+                withContext(Dispatchers.IO) {
+                    partial.parentFile?.mkdirs()
+                    val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                    try {
+                        conn.connectTimeout = 30000
+                        conn.readTimeout = 30000
+                        if (conn.responseCode != 200) throw java.io.IOException("HTTP ${conn.responseCode}")
+                        var downloaded = 0L
+                        var lastPercent = -1
+                        conn.inputStream.use { input ->
+                            partial.outputStream().use { output ->
+                                val buffer = ByteArray(64 * 1024)
+                                while (true) {
+                                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                                    val count = input.read(buffer)
+                                    if (count == -1) break
+                                    downloaded += count
+                                    if (downloaded > expectedSize) throw java.io.IOException("Unexpected APK size")
+                                    output.write(buffer, 0, count)
+                                    val percent = (downloaded * 100 / expectedSize).toInt()
+                                    if (percent != lastPercent) {
+                                        lastPercent = percent
+                                        withContext(Dispatchers.Main) { progress.progress = percent }
+                                    }
                                 }
                             }
                         }
+                        if (downloaded != expectedSize) throw java.io.IOException("Incomplete APK download")
+                        validateUpdateApk(partial)
+                        if (updateApk.exists() && !updateApk.delete()) throw java.io.IOException("Cannot replace APK")
+                        if (!partial.renameTo(updateApk)) throw java.io.IOException("Cannot save APK")
+                    } finally {
+                        conn.disconnect()
                     }
                 }
-
-                nm.cancel(NOTIFICATION_ID + 1)
-
-                withContext(Dispatchers.Main) {
-                    val apkUri = FileProvider.getUriForFile(
-                        this@GameActivity, "${packageName}.fileprovider", apkFile
-                    )
-                    val intent = Intent(Intent.ACTION_VIEW).apply {
-                        setDataAndType(apkUri, "application/vnd.android.package-archive")
-                        flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK
-                    }
-                    startActivity(intent)
-                }
+                updateDialog?.dismiss()
+                lifecycle.withResumed { installDownloadedUpdate() }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
-                e.printStackTrace()
-                nm.cancel(NOTIFICATION_ID + 1)
-                withContext(Dispatchers.Main) {
-                    MaterialAlertDialogBuilder(this@GameActivity)
-                        .setTitle("Download failed")
-                        .setMessage(e.message ?: "Unknown error")
-                        .setPositiveButton("OK", null)
-                        .show()
+                android.util.Log.w("Gardendless", "Update download failed", e)
+                prefs.edit().remove("last_update_check").apply()
+                updateDialog?.dismiss()
+                lifecycle.withResumed {
+                    showUpdateError(getString(R.string.update_download_failed))
                 }
+            } finally {
+                withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) { partial.delete() }
+                updateDownloadInProgress = false
             }
         }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun validateUpdateApk(file: File) {
+        val archive = packageManager.getPackageArchiveInfo(file.path, 0)
+            ?: throw java.io.IOException("Invalid APK")
+        val installed = packageManager.getPackageInfo(packageName, 0)
+        val archiveCode = androidx.core.content.pm.PackageInfoCompat.getLongVersionCode(archive)
+        val installedCode = androidx.core.content.pm.PackageInfoCompat.getLongVersionCode(installed)
+        if (archive.packageName != packageName || archiveCode <= installedCode) {
+            throw java.io.IOException("APK is not an upgrade for this application")
+        }
+    }
+
+    private fun installDownloadedUpdate() {
+        try {
+            validateUpdateApk(updateApk)
+            if (!packageManager.canRequestPackageInstalls()) {
+                installPermissionLauncher.launch(Intent(
+                    android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    "package:$packageName".toUri()
+                ))
+                return
+            }
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", updateApk)
+            startActivity(Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                clipData = android.content.ClipData.newRawUri("Update APK", uri)
+            })
+        } catch (e: Exception) {
+            android.util.Log.w("Gardendless", "Cannot install update", e)
+            showUpdateError(getString(R.string.update_install_failed))
+        }
+    }
+
+    private fun showUpdateError(message: String, retry: () -> Unit = {
+        prefs.edit().remove("last_update_check").apply()
+        checkForAppUpdate()
+    }) {
+        if (isFinishing || isDestroyed) return
+        updateDialog = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.update_error)
+            .setMessage(message)
+            .setPositiveButton(R.string.retry) { _, _ -> retry() }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 }
