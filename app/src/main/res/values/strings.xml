@@ -37,4 +37,9 @@
     <string name="update_download_failed">The update could not be downloaded or verified. Please try again later.</string>
     <string name="update_install_failed">The update could not be installed. Check that the APK is newer and signed with the same key as the installed app.</string>
     <string name="update_permission_required">Allow this app to install updates in Android settings, then try again.</string>
+    <string name="performance_title">Performance</string>
+    <string name="performance_low">Low-end · 30 FPS target · lower resolution</string>
+    <string name="performance_balanced">Balanced · 60 FPS target · reduced resolution</string>
+    <string name="performance_original">Original · 60 FPS target · full resolution</string>
+    <string name="performance_apply">Apply</string>
 </resources>

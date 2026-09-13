@@ -35,18 +35,36 @@ The game expects mouse input. Touch gestures are translated automatically:
 
 A gesture guide appears on first launch.
 
+## Performance
+
+Press **Back → Performance** during the game to change modes. Changes apply immediately and are saved for the next launch.
+
+| Mode | Frame-rate target | Maximum WebView render edge |
+|---|---|---|
+| Low-end | 30 FPS | 960 px |
+| Balanced | 60 FPS | 1280 px |
+| Original | 60 FPS | Full available size |
+
+Devices reported as low-RAM by Android, or with at most 4 GiB of RAM, default to Low-end. Other devices default to Balanced. An explicit selection takes precedence.
+
+Reduced modes measure the WebView at a smaller size and scale it to the available game area. This reduces the game viewport resolution while keeping the display area and aspect-ratio behavior. Android transforms touch coordinates into the scaled view; the existing touch-to-mouse conversion stays in that view's coordinate space.
+
+The frame-rate limit uses Cocos Game's frame-rate setter, including its native frame pacing and delta-time handling. It does not replace `requestAnimationFrame` or alter simulation timers. The engine bridge is injected into the bundled `application.js` in memory; extracted game files are unchanged. If a future bootstrap or engine API is incompatible, the FPS hook logs a warning and rendering-resolution controls remain available.
+
+These modes address [issue #1](https://github.com/MrPurple666/pvzge-android/issues/1). A target is a cap, not a guaranteed frame rate: CPU-heavy waves, texture memory, temperature and WebView/GPU performance still affect results. FPS gains have not been measured on the reporting device.
+
 ## Under the hood
 
 ```
 Game (JS/WASM) → WebViewAssetLoader → local files
 Touch input    → MouseGameWebView   → MouseEvent injection
-Rendering      → WebGL2 canvas      → 16:9 letterboxed
+Rendering      → WebGL2 canvas      → scalable viewport / fullscreen
 ```
 
 - **[Cocos Creator 3.8](https://www.cocos.com/creator)** engine compiled to web, running in Android's `WebView`
 - **[WebViewAssetLoader](https://developer.android.com/reference/androidx/webkit/WebViewAssetLoader)** serves files from internal storage — no HTTP server needed
 - **[MouseGameWebView](app/src/main/java/com/pvzge/gardendless/MouseGameWebView.kt)** converts touch → mouse events at the native level
-- **16:9 letterboxing** keeps the game's 1024×640 design resolution centered on any screen
+- **Aspect-ratio fitting and fullscreen** keep the game centered, with selectable render resolution
 
 ## Build
 

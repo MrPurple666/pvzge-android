@@ -45,6 +45,10 @@ import java.util.zip.ZipInputStream
 
 class GameActivity : AppCompatActivity() {
 
+    @Volatile private var performanceMode: PerformanceMode = PerformanceMode.BALANCED
+    private lateinit var performanceScript: String
+    private var performanceDialog: android.app.Dialog? = null
+    private var webviewReady = false
     private lateinit var aspectContainer: AspectRatioFrameLayout
     private val prefs by lazy { getSharedPreferences("app_data", MODE_PRIVATE) }
     private val EXPORT_SAVE_RESULT_CODE = 102
@@ -67,6 +71,8 @@ class GameActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         DynamicColors.applyToActivityIfAvailable(this)
         setupFullScreen()
+        performanceMode = PerformanceMode.load(this)
+        performanceScript = assets.open("android-performance.js").bufferedReader().use { it.readText() }
         createNotificationChannel()
 
         // Pre-warm WebView engine during extraction
@@ -243,6 +249,7 @@ class GameActivity : AppCompatActivity() {
         aspectContainer = AspectRatioFrameLayout(this).apply {
             setBackgroundColor(android.graphics.Color.BLACK)
             fullscreen = prefs.getBoolean(PREF_FULLSCREEN, false)
+            maxRenderEdge = performanceMode.maxRenderEdge
             addView(webView, android.widget.FrameLayout.LayoutParams(
                 android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
                 android.view.ViewGroup.LayoutParams.WRAP_CONTENT
@@ -264,9 +271,9 @@ class GameActivity : AppCompatActivity() {
             allowFileAccess = false
             allowContentAccess = false
             mediaPlaybackRequiresUserGesture = false
-            // GPU performance settings
-            @Suppress("DEPRECATION")
-            setAlgorithmicDarkeningAllowed(false)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                setAlgorithmicDarkeningAllowed(false)
+            }
             safeBrowsingEnabled = false
         }
 
@@ -274,12 +281,6 @@ class GameActivity : AppCompatActivity() {
         if (BuildConfig.DEBUG) {
             WebView.setWebContentsDebuggingEnabled(true)
         }
-
-        // GPU process priority — requires androidx.webkit 1.16+
-        // TODO: Enable when webkit dependency is updated
-        // if (Build.VERSION.SDK_INT >= 34) {
-        //     webView.setRenderProcessPriority(WebView.RENDERER_PRIORITY_IMPORTANT)
-        // }
 
         webView.addJavascriptInterface(object {
             @JavascriptInterface
@@ -361,6 +362,9 @@ class GameActivity : AppCompatActivity() {
                 view: WebView, request: WebResourceRequest
             ): WebResourceResponse? {
                 val response = assetLoader.shouldInterceptRequest(request.url) ?: return null
+                if (request.url.path == "/application.js") {
+                    return injectPerformanceIntoApplication(response)
+                }
                 // Inject touch-blocking script into index.html before browser parses it
                 if (request.url.toString() == "https://appassets.androidplatform.net/index.html") {
                     return injectTouchBlockerIntoHtml(response)
@@ -387,7 +391,12 @@ class GameActivity : AppCompatActivity() {
             }
 
             override fun onConsoleMessage(msg: ConsoleMessage?): Boolean {
-                msg?.let { android.util.Log.d("Gardendless", "[${it.messageLevel()}] ${it.message()}") }
+                msg?.let {
+                    if (BuildConfig.DEBUG || it.messageLevel() == ConsoleMessage.MessageLevel.ERROR ||
+                        it.messageLevel() == ConsoleMessage.MessageLevel.WARNING) {
+                        android.util.Log.d("Gardendless", "[${it.messageLevel()}] ${it.message()}")
+                    }
+                }
                 return true
             }
 
@@ -412,6 +421,7 @@ class GameActivity : AppCompatActivity() {
             }
         }
 
+        webviewReady = true
         webView.loadUrl("https://appassets.androidplatform.net/index.html")
         setupBackNavigation()
         // Check for app updates in background (doesn't block game)
@@ -424,7 +434,7 @@ class GameActivity : AppCompatActivity() {
      * GameCanvas is created — zero polling delay, works for both WebGL and Canvas2D.
      */
     private fun injectTouchBlockerIntoHtml(response: WebResourceResponse): WebResourceResponse {
-        val html = response.data.bufferedReader().readText()
+        val html = response.data.bufferedReader().use { it.readText() }
         val tag = """
 <script>
 (function(){
@@ -439,7 +449,8 @@ o.observe(document.body||document.documentElement,{childList:true,subtree:true})
 </script>
 </body>""".trimIndent()
         val head = Regex("<head(?:\\s[^>]*)?>", RegexOption.IGNORE_CASE).find(html)
-        val bridgeTag = "<script>" + gameBridgeHookJs + "</script>"
+        val bridgeTag = "<script>window.PvzTargetFps=" + performanceMode.targetFps + ";" +
+            performanceScript + gameBridgeHookJs + "</script>"
         val hookedHtml = if (head != null) {
             html.replaceRange(head.range, head.value + bridgeTag)
         } else {
@@ -452,6 +463,57 @@ o.observe(document.body||document.documentElement,{childList:true,subtree:true})
             modified.byteInputStream()
         )
     }
+    private fun injectPerformanceIntoApplication(response: WebResourceResponse): WebResourceResponse {
+        val source = response.data.bufferedReader().use { it.readText() }
+        val marker = Regex("\\bcc\\s*=\\s*engine\\s*;")
+        val assignment = marker.find(source)
+        val modified = if (assignment != null) {
+            source.replaceRange(assignment.range,
+                assignment.value + "window.PvzPerformance && window.PvzPerformance.install(engine);")
+        } else {
+            android.util.Log.w("Gardendless", "Performance hook: unrecognized application bootstrap")
+            source
+        }
+        return WebResourceResponse(response.mimeType, response.encoding, modified.byteInputStream())
+    }
+
+    private fun showPerformanceSettings() {
+        val modes = PerformanceMode.entries
+        var selected = modes.indexOf(performanceMode)
+        performanceDialog = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.performance_title)
+            .setSingleChoiceItems(modes.map { getString(it.label) }.toTypedArray(), selected) { _, index ->
+                selected = index
+            }
+            .setPositiveButton(R.string.performance_apply) { _, _ ->
+                performanceMode = modes[selected]
+                prefs.edit().putString("performance_mode", performanceMode.name).apply()
+                aspectContainer.maxRenderEdge = performanceMode.maxRenderEdge
+                webView.evaluateJavascript(
+                    "window.PvzPerformance && window.PvzPerformance.setTargetFps(${performanceMode.targetFps});",
+                    null
+                )
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    override fun onPause() {
+        if (webviewReady) {
+            webView.evaluateJavascript("window.PvzPerformance && window.PvzPerformance.setPaused(true);", null)
+            webView.onPause()
+        }
+        super.onPause()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (webviewReady) {
+            webView.onResume()
+            webView.evaluateJavascript("window.PvzPerformance && window.PvzPerformance.setPaused(false);", null)
+        }
+    }
+
     // Gesture hint overlay for first-time users
     private fun showGestureHints() {
         val js = """
@@ -514,6 +576,8 @@ o.observe(document.body||document.documentElement,{childList:true,subtree:true})
     }
 
     override fun onDestroy() {
+        performanceDialog?.dismiss()
+        performanceDialog = null
         updateDialog?.dismiss()
         updateDialog = null
         fullscreenCallback?.onCustomViewHidden()
@@ -684,6 +748,7 @@ o.observe(document.body||document.documentElement,{childList:true,subtree:true})
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.hint)
             .setMessage(R.string.exit_confirm)
+            .setNeutralButton(R.string.performance_title) { _, _ -> showPerformanceSettings() }
             .setPositiveButton(R.string.yes) { _, _ -> finish() }
             .setNegativeButton(R.string.no, null)
             .show()

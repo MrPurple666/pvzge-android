@@ -22,6 +22,13 @@ class AspectRatioFrameLayout @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null
 ) : FrameLayout(context, attrs) {
 
+    var maxRenderEdge: Int = 0
+        set(value) {
+            if (field == value) return
+            field = value
+            requestLayout()
+        }
+
     var fullscreen: Boolean = false
         set(value) {
             if (field == value) return
@@ -42,23 +49,24 @@ class AspectRatioFrameLayout @JvmOverloads constructor(
         if (!fullscreen) {
             when {
                 screenWidth * MAX_ASPECT_H > screenHeight * MAX_ASPECT_W -> {
-
-
                     targetWidth = screenHeight * MAX_ASPECT_W / MAX_ASPECT_H
                 }
                 screenWidth * MIN_ASPECT_H < screenHeight * MIN_ASPECT_W -> {
-
-
                     targetHeight = screenWidth * MIN_ASPECT_H / MIN_ASPECT_W
                 }
 
             }
         }
 
+        val renderSize = RenderSize.fit(targetWidth, targetHeight, maxRenderEdge)
         child.measure(
-            MeasureSpec.makeMeasureSpec(targetWidth, MeasureSpec.EXACTLY),
-            MeasureSpec.makeMeasureSpec(targetHeight, MeasureSpec.EXACTLY)
+            MeasureSpec.makeMeasureSpec(renderSize[0], MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(renderSize[1], MeasureSpec.EXACTLY)
         )
+        child.pivotX = renderSize[0] / 2f
+        child.pivotY = renderSize[1] / 2f
+        child.scaleX = if (renderSize[0] > 0) targetWidth.toFloat() / renderSize[0] else 1f
+        child.scaleY = if (renderSize[1] > 0) targetHeight.toFloat() / renderSize[1] else 1f
     }
 
     private companion object {

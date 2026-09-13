@@ -29,4 +29,9 @@
     <string name="documents_error_delete_root">不能删除游戏目录本身</string>
     <string name="documents_error_target_exists">已存在同名文件</string>
     <string name="documents_error_rename_failed">重命名失败</string>
+    <string name="performance_title">性能</string>
+    <string name="performance_low">低配置 · 目标 30 FPS · 低分辨率</string>
+    <string name="performance_balanced">均衡 · 目标 60 FPS · 降低分辨率</string>
+    <string name="performance_original">原始 · 目标 60 FPS · 完整分辨率</string>
+    <string name="performance_apply">应用</string>
 </resources>
